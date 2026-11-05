@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nhà Ba Gian Hai Chái — Three.js Modular</title>
+
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e12; font-family: system-ui, sans-serif; -webkit-user-select: none; user-select: none; }
+  canvas { display: block; touch-action: none; }
+
+  /* --- APP CONTAINER --- */
+  #app { position: fixed; inset: 0; }
+
+  /* --- HUD & TOPBAR --- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 100; }
+  #topbar {
+    position: absolute; top: 18px; left: 18px; right: 18px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* Đồng hồ góc trái */
+  #clock {
+    background: rgba(16, 18, 22, 0.62);
+    border: 1px solid rgba(255, 220, 170, 0.18);
+    color: #f4ece1; font-size: 14px; font-variant-numeric: tabular-nums;
+    padding: 10px 16px; border-radius: 999px;
+    backdrop-filter: blur(8px); box-shadow: 0 8px 30px rgba(0,0,0,.35);
+  }
+
+  /* Nút Mute góc phải (Đã bỏ position: fixed) */
+  #music-toggle {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: rgba(16, 18, 22, 0.62);
+    border: 1px solid rgba(255, 220, 170, 0.18);
+    backdrop-filter: blur(8px);
+    color: #f4ece1; font-size: 18px;
+    display: grid; place-items: center;
+    cursor: pointer; pointer-events: auto;
+    box-shadow: 0 8px 30px rgba(0,0,0,.35);
+    transition: background 0.3s, transform 0.2s;
+  }
+  #music-toggle:hover { background: rgba(255, 207, 143, 0.25); transform: scale(1.05); }
+  #music-toggle:active { transform: scale(0.95); }
+
+  /* Loader màn hình chờ (Tăng z-index để đè lên tất cả) */
+  #loader {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: #0b0e12; color: #d9c8a8; z-index: 9999;
+    font: 13px/1 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 3px; text-transform: uppercase;
+    transition: opacity .7s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+
+  /* Hint text (Đẩy xuống top: 75px để không đè topbar) */
+  #hint {
+    position: fixed; top: 75px; left: 50%; transform: translateX(-50%);
+    padding: 10px 18px; border-radius: 999px;
+    background: rgba(16,18,22,.62); border: 1px solid rgba(255,220,170,.18);
+    backdrop-filter: blur(8px); color: #f4ece1;
+    font: 13.5px/1 ui-sans-serif, system-ui, sans-serif;
+    white-space: nowrap; pointer-events: none;
+    box-shadow: 0 8px 30px rgba(0,0,0,.35); transition: opacity .6s ease;
+  }
+  #hint b { color: #ffcf8f; font-weight: 600; }
+
+  /* --- CONTEXT MENU (CHIẾU TRE) --- */
+  #mat-menu {
+    position: fixed; display: none; flex-direction: column; gap: 6px;
+    padding: 10px; min-width: 236px;
+    background: rgba(16, 18, 22, 0.88);
+    border: 1px solid rgba(255, 220, 170, 0.25);
+    border-radius: 14px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px); transform: translate(-50%, -100%);
+    z-index: 300; pointer-events: auto;
+  }
+  #mat-menu.show { display: flex; animation: pop .18s ease-out; }
+  @keyframes pop {
+    from { opacity: 0; transform: translate(-50%, -100%) scale(.94); }
+    to   { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  }
+  #mat-menu button {
+    cursor: pointer; display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 10px 14px;
+    border: 1px solid rgba(255, 220, 170, 0.16); border-radius: 10px;
+    background: rgba(255, 220, 170, 0.06); color: #f4ece1;
+    font-size: 13.5px; font-weight: 500; text-align: left;
+    transition: background .15s, border-color .15s, transform .12s;
+  }
+  #mat-menu button:hover { background: rgba(255, 220, 170, 0.16); border-color: rgba(255, 220, 170, 0.38); }
+  #mat-menu button:active { transform: scale(.98); }
+  #mat-menu button[data-action="roll"] { color: #ffcf8f; }
+
+  /* --- NOTEPAD (SỔ TAY) --- */
+  #notepad-overlay {
+    position: fixed; inset: 0; background: rgba(11, 14, 18, 0.75);
+    backdrop-filter: blur(6px); display: flex; justify-content: center; align-items: center;
+    z-index: 200; 
+    opacity: 0; 
+    visibility: hidden; 
+    pointer-events: none; 
+    transition: opacity 0.4s ease, visibility 0.4s ease;
+  }
+  #notepad-overlay.show { 
+    opacity: 1; 
+    visibility: visible; 
+    pointer-events: auto; 
+  }
+  
+  /* Khôi phục lại giao diện tờ giấy */
+  #notepad {
+    width: 440px; max-width: 90%; background: #f4ece1;
+    background-image: radial-gradient(#e4dac8 10%, transparent 11%);
+    background-size: 16px 16px; border-radius: 4px; padding: 25px 30px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 0 40px rgba(138,98,60,0.15);
+    border: 1px solid #dcd1be; color: #3e3225; font-family: "Courier New", Courier, monospace, sans-serif;
+    transform: translateY(-20px); transition: transform 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  }
+  #notepad-overlay.show #notepad { transform: translateY(0); }
+  
+  #notepad h2 {
+    text-align: center; margin-top: 0; color: #8a3526; font-size: 19px;
+    border-bottom: 2px dashed #dcd1be; padding-bottom: 12px; letter-spacing: 1px;
+  }
+  .notepad-section { margin: 18px 0; font-size: 13px; line-height: 1.6; }
+  .notepad-section h3 { font-size: 14px; color: #5a422d; margin-bottom: 6px; margin-top: 0; }
+  .volume-control { display: flex; align-items: center; justify-content: space-between; margin: 12px 0; font-size: 13px; }
+  .volume-slider {
+    -webkit-appearance: none; width: 60%; height: 5px;
+    background-color: #dcd1be; border-radius: 99px; outline: none;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: #8a3526; cursor: pointer; transition: transform 0.1s;
+  }
+  .volume-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  #close-notepad-btn {
+    display: block; width: 100%; padding: 10px; margin-top: 20px;
+    background: #8a3526; color: #f4ece1; border: none; border-radius: 4px;
+    cursor: pointer; font-weight: bold; font-size: 13px; text-align: center; transition: background 0.2s;
+  }
+  #close-notepad-btn:hover { background: #a63a2b; }
+  .notepad-section { margin: 18px 0; font-size: 13px; line-height: 1.6; }
+  .notepad-section h3 { font-size: 14px; color: #5a422d; margin-bottom: 6px; margin-top: 0; }
+  .volume-control { display: flex; align-items: center; justify-content: space-between; margin: 12px 0; font-size: 13px; }
+  .volume-slider {
+    -webkit-appearance: none; width: 60%; height: 5px;
+    background: #dcd1be; border-radius: 99px; outline: none;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: #8a3526; cursor: pointer; transition: transform 0.1s;
+  }
+  .volume-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+  #close-notepad-btn {
+    display: block; width: 100%; padding: 10px; margin-top: 20px;
+    background: #8a3526; color: #f4ece1; border: none; border-radius: 4px;
+    cursor: pointer; font-weight: bold; font-size: 13px; text-align: center; transition: background 0.2s;
+  }
+  #close-notepad-btn:hover { background: #a63a2b; }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+  <!-- Container cho Three.js -->
+  <div id="app"></div>
+
+  <!-- Loader -->
+  <div id="loader">đang dựng sân nhà…</div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <!-- Topbar: Đồng hồ trái - Nút Mute phải -->
+    <div id="topbar">
+      <div id="clock">00:00</div>
+      <button id="music-toggle" title="Bật/Tắt nhạc nền">🔊</button>
+    </div>
+
+    <!-- Hint text -->
+    <div id="hint">Nhấn <b>ấm trà</b> để rót nước · Nhấn <b>đài cassette</b> để bật/tắt lofi sáo trúc</div>
+
+    <!-- Context menu cho chiếu tre -->
+    <div id="mat-menu">
+      <button data-action="lie">🛌 Nằm nghỉ trên chiếu</button>
+      <button data-action="roll">🧺 Cuộn chiếu cất về chỗ cũ</button>
+    </div>
+  </div>
+
+  <!-- Sổ tay cài đặt -->
+  <div id="notepad-overlay">
+    <div id="notepad">
+      <h2>Sổ Tay Cụ Già</h2>
+      
+      <!-- MỤC 1: HƯỚNG DẪN CHƠI -->
+      <div class="notepad-section">
+        <h3>📜 Hướng dẫn chơi</h3>
+        <ul style="padding-left: 20px; margin: 0; font-size: 13px; color: #5a422d; line-height: 1.8;">
+          <li><b>Chuột trái:</b> Click để đi bộ, tương tác (ấm trà, đài, cửa, mèo...).</li>
+          <li><b>Giữ chuột trái + Kéo:</b> Xoay góc nhìn camera.</li>
+          <li><b>Lăn chuột:</b> Thu phóng lại gần / ra xa.</li>
+          <li><b>Phím E:</b> Đứng dậy, cất nến, hoặc mở/đóng cửa nhà.</li>
+          <li><b>Phím ESC:</b> Mở/Đóng Sổ Tay này.</li>
+        </ul>
+      </div>
+
+      <!-- MỤC 2: CÀI ĐẶT ÂM THANH -->
+      <div class="notepad-section">
+        <h3>🎵 Cài đặt âm thanh</h3>
+        <div class="volume-control">
+          <span>Nhạc nền:</span>
+          <input type="range" class="volume-slider" id="volume-bgm" min="0" max="100" value="50">
+        </div>
+        <div class="volume-control">
+          <span>Hiệu ứng (SFX):</span>
+          <input type="range" class="volume-slider" id="volume-sfx" min="0" max="100" value="80">
+        </div>
+      </div>
+      
+      <button id="close-notepad-btn">Tiếp tục chơi (ESC)</button>
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
